@@ -1,4 +1,4 @@
-name: Build BulletinPro - Hybrid (Flet + PyInstaller)
+name: 🚀 Desktop Builds (Linux, macOS, Windows)
 
 on:
   push:
@@ -9,175 +9,179 @@ on:
   workflow_dispatch:
 
 env:
+  BUILD_NUMBER: 1
   BUILD_VERSION: 1.0.0
   PYTHON_VERSION: 3.12.8
+  FLET_CLI_VERSION: 0.27.5
+  FLUTTER_VERSION: 3.30.0  # ✅ Fix: Dart 3.7+ requis pour webview_flutter_android 4.10.5
+  PYTHONUTF8: 1
+  FLET_CLI_NO_RICH_OUTPUT: 1
+  UV_NO_PROGRESS: 1
 
 jobs:
-  # Build avec Flet (natif Flutter)
-  build-flet:
-    name: 🦋 Flet Build - ${{ matrix.os }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: Linux
-            runner: ubuntu-latest
-            build-cmd: linux
-            artifact: build/linux
-          - os: Windows
-            runner: windows-latest
-            build-cmd: windows
-            artifact: build/windows
+  build-linux:
+    name: 🐧 Build Linux
+    runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
       
-      - name: 🐍 Setup Python
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: 🦋 Setup Flutter 3.30+
+      - name: 🦋 Setup Flutter ${{ env.FLUTTER_VERSION }}
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.30.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
       
-      - name: 🔧 Install system deps (Linux)
-        if: matrix.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
+      - name: 🔧 Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev
       
-      - name: 📦 Install dependencies
+      - name: 📦 Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flet-cli==0.27.5
-          pip install -r requirements.txt
+          pip install flet-cli==$FLET_CLI_VERSION
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
       
-      - name: 🔨 Build with Flet
-        run: flet build ${{ matrix.build-cmd }} --build-version=${{ env.BUILD_VERSION }}
+      - name: 🔨 Flet Build Linux
+        run: |
+          flet build linux --verbose --build-number=$BUILD_NUMBER --build-version=$BUILD_VERSION
       
-      - name: 📤 Upload Flet artifact
+      - name: 🔍 Verify build output
+        run: |
+          echo "📂 Contents of build/linux:"
+          ls -lhR build/linux || echo "❌ build/linux not found"
+          
+          echo ""
+          echo "🔍 Searching for .deb files:"
+          find build -name "*.deb" -type f || echo "⚠️ No .deb files found"
+      
+      - name: 📤 Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flet-${{ matrix.os }}-build
-          path: ${{ matrix.artifact }}
+          name: bulletinpro-linux-${{ env.BUILD_VERSION }}
+          path: build/linux
           if-no-files-found: error
+          retention-days: 30
 
-  # Build avec PyInstaller (fallback)
-  build-pyinstaller:
-    name: 🐍 PyInstaller - ${{ matrix.os }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - os: Linux
-            runner: ubuntu-latest
-            separator: ':'
-          - os: Windows
-            runner: windows-latest
-            separator: ';'
+  build-macos:
+    name: 🍎 Build macOS
+    runs-on: macos-latest
     
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
       
-      - name: 🐍 Setup Python
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: 📦 Install dependencies
+      - name: 🦋 Setup Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+      
+      - name: 📦 Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
+          pip install flet-cli==$FLET_CLI_VERSION
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
       
-      - name: 🔨 Build with PyInstaller (Windows)
-        if: matrix.os == 'Windows'
+      - name: 🔨 Flet Build macOS
         run: |
-          pyinstaller --onefile --windowed `
-            --name BulletinPro `
-            --icon assets/icon.ico `
-            --add-data "assets${{ matrix.separator }}assets" `
-            main.py
+          flet build macos --verbose --build-number=$BUILD_NUMBER --build-version=$BUILD_VERSION
       
-      - name: 🔨 Build with PyInstaller (Linux)
-        if: matrix.os == 'Linux'
+      - name: 🔍 Verify build output
         run: |
-          pyinstaller --onefile --windowed \
-            --name BulletinPro \
-            --add-data "assets${{ matrix.separator }}assets" \
-            main.py
+          echo "📂 Contents of build/macos:"
+          ls -lhR build/macos || echo "❌ build/macos not found"
+          
+          echo ""
+          echo "🔍 Searching for .app bundles:"
+          find build/macos -name "*.app" -type d || echo "⚠️ No .app bundles found"
       
-      - name: 📤 Upload PyInstaller artifact
+      - name: 📤 Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pyinstaller-${{ matrix.os }}-build
-          path: dist/
+          name: bulletinpro-macos-${{ env.BUILD_VERSION }}
+          path: build/macos
           if-no-files-found: error
+          retention-days: 30
 
-  # Créer des packages .deb pour Linux
-  create-deb:
-    name: 📦 Create .deb package
-    needs: build-pyinstaller
-    runs-on: ubuntu-latest
+  build-windows:
+    name: 🪟 Build Windows
+    runs-on: windows-latest
     
     steps:
-      - name: 📥 Download Linux build
-        uses: actions/download-artifact@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
         with:
-          name: pyinstaller-Linux-build
-          path: ./dist
+          python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: 🔨 Create .deb package
+      - name: 🦋 Setup Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+      
+      - name: 📦 Install Python dependencies
         run: |
-          mkdir -p bulletinpro_${{ env.BUILD_VERSION }}/DEBIAN
-          mkdir -p bulletinpro_${{ env.BUILD_VERSION }}/usr/bin
-          mkdir -p bulletinpro_${{ env.BUILD_VERSION }}/usr/share/applications
-          mkdir -p bulletinpro_${{ env.BUILD_VERSION }}/usr/share/icons/hicolor/256x256/apps
-          
-          # Copier l'exécutable
-          chmod +x dist/BulletinPro
-          cp dist/BulletinPro bulletinpro_${{ env.BUILD_VERSION }}/usr/bin/
-          
-          # Créer control
-          cat > bulletinpro_${{ env.BUILD_VERSION }}/DEBIAN/control << EOF
-          Package: bulletinpro
-          Version: ${{ env.BUILD_VERSION }}
-          Architecture: amd64
-          Maintainer: BulletinPro Team
-          Description: Application de gestion de bulletins scolaires
-           Système complet de gestion des notes et bulletins.
-          EOF
-          
-          # Créer .desktop
-          cat > bulletinpro_${{ env.BUILD_VERSION }}/usr/share/applications/bulletinpro.desktop << EOF
-          [Desktop Entry]
-          Name=BulletinPro
-          Comment=Gestion de bulletins scolaires
-          Exec=/usr/bin/BulletinPro
-          Icon=bulletinpro
-          Type=Application
-          Categories=Education;Office;
-          Terminal=false
-          EOF
-          
-          # Construire .deb
-          dpkg-deb --build bulletinpro_${{ env.BUILD_VERSION }}
-          mv bulletinpro_${{ env.BUILD_VERSION }}.deb BulletinPro-${{ env.BUILD_VERSION }}.deb
+          python -m pip install --upgrade pip
+          pip install flet-cli==$env:FLET_CLI_VERSION
+          if (Test-Path requirements.txt) {
+            pip install -r requirements.txt
+          }
       
-      - name: 📤 Upload .deb
+      - name: 🔨 Flet Build Windows
+        run: |
+          flet build windows --verbose --no-rich-output --build-number=$env:BUILD_NUMBER --build-version=$env:BUILD_VERSION
+      
+      - name: 🔍 Verify build output
+        run: |
+          Write-Host "📂 Contents of build/windows:"
+          if (Test-Path build/windows) {
+            Get-ChildItem -Path build/windows -Recurse | Format-Table -AutoSize
+          } else {
+            Write-Host "❌ build/windows not found"
+          }
+          
+          Write-Host ""
+          Write-Host "🔍 Searching for .exe files:"
+          if (Test-Path build) {
+            Get-ChildItem -Path build -Recurse -Filter *.exe -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "✅ Found: $($_.FullName)"
+            }
+          }
+      
+      - name: 📤 Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bulletinpro-deb-package
-          path: BulletinPro-*.deb
+          name: bulletinpro-windows-${{ env.BUILD_VERSION }}
+          path: build/windows
+          if-no-files-found: error
+          retention-days: 30
 
-  # Release si tag
   create-release:
-    name: 🚀 Create Release
-    needs: [build-flet, build-pyinstaller, create-deb]
+    name: 🚀 Create GitHub Release
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    
     permissions:
       contents: write
     
@@ -187,80 +191,106 @@ jobs:
         with:
           path: ./artifacts
       
-      - name: 📋 List artifacts
-        run: ls -lhR ./artifacts
-      
-      - name: 📦 Prepare release files
+      - name: 📋 List downloaded artifacts
         run: |
-          # Flet builds (prioritaire)
-          if [ -d "artifacts/flet-Windows-build" ]; then
-            cd artifacts/flet-Windows-build
-            zip -r ../../BulletinPro-Windows-Flet.zip ./*
+          echo "📂 Artifacts directory structure:"
+          ls -lhR ./artifacts
+      
+      - name: 📦 Package releases
+        run: |
+          # Linux - copier .deb si disponible
+          if [ -d "artifacts/bulletinpro-linux-${{ env.BUILD_VERSION }}" ]; then
+            cd "artifacts/bulletinpro-linux-${{ env.BUILD_VERSION }}"
+            if ls *.deb 1> /dev/null 2>&1; then
+              cp *.deb ../../BulletinPro-${{ env.BUILD_VERSION }}-Linux.deb
+              echo "✅ Linux .deb created"
+            else
+              # Si pas de .deb, créer une archive
+              tar -czf ../../BulletinPro-${{ env.BUILD_VERSION }}-Linux.tar.gz ./*
+              echo "✅ Linux tar.gz created"
+            fi
             cd ../..
           fi
           
-          if [ -d "artifacts/flet-Linux-build" ]; then
-            find artifacts/flet-Linux-build -name "*.deb" -exec cp {} BulletinPro-Linux-Flet.deb \;
-          fi
-          
-          # PyInstaller builds (backup)
-          if [ -d "artifacts/pyinstaller-Windows-build" ]; then
-            cd artifacts/pyinstaller-Windows-build
-            zip -r ../../BulletinPro-Windows-PyInstaller.zip ./*
+          # macOS - créer DMG ou ZIP
+          if [ -d "artifacts/bulletinpro-macos-${{ env.BUILD_VERSION }}" ]; then
+            cd "artifacts/bulletinpro-macos-${{ env.BUILD_VERSION }}"
+            zip -r ../../BulletinPro-${{ env.BUILD_VERSION }}-macOS.zip ./*
+            echo "✅ macOS zip created"
             cd ../..
           fi
           
-          if [ -f "artifacts/bulletinpro-deb-package/BulletinPro-"*.deb ]; then
-            cp artifacts/bulletinpro-deb-package/BulletinPro-*.deb BulletinPro-Linux-PyInstaller.deb
+          # Windows - créer ZIP
+          if [ -d "artifacts/bulletinpro-windows-${{ env.BUILD_VERSION }}" ]; then
+            cd "artifacts/bulletinpro-windows-${{ env.BUILD_VERSION }}"
+            zip -r ../../BulletinPro-${{ env.BUILD_VERSION }}-Windows.zip ./*
+            echo "✅ Windows zip created"
+            cd ../..
           fi
+          
+          echo ""
+          echo "📦 Final release files:"
+          ls -lh BulletinPro-*
       
       - name: 🚀 Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            BulletinPro-Windows-Flet.zip
-            BulletinPro-Linux-Flet.deb
-            BulletinPro-Windows-PyInstaller.zip
-            BulletinPro-Linux-PyInstaller.deb
+            BulletinPro-*.deb
+            BulletinPro-*.tar.gz
+            BulletinPro-*.zip
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
             ## 📦 BulletinPro ${{ github.ref_name }}
             
-            ### 🎯 Versions disponibles
-            
-            **🦋 Flet (Recommandé - Interface native Flutter):**
-            - `BulletinPro-Windows-Flet.zip` - Windows 10/11
-            - `BulletinPro-Linux-Flet.deb` - Ubuntu/Debian
-            
-            **🐍 PyInstaller (Alternative - Plus simple):**
-            - `BulletinPro-Windows-PyInstaller.zip` - Windows 10/11
-            - `BulletinPro-Linux-PyInstaller.deb` - Ubuntu/Debian
-            
             ### 📥 Installation
             
-            **Windows:**
-            1. Téléchargez le .zip de votre choix
-            2. Extrayez le contenu
-            3. Lancez l'exécutable
-            
-            **Linux (Ubuntu/Debian):**
+            **🐧 Linux (Ubuntu/Debian):**
             ```bash
-            sudo dpkg -i BulletinPro-Linux-*.deb
-            sudo apt-get install -f  # Résoudre les dépendances si nécessaire
+            # Si fichier .deb disponible:
+            sudo dpkg -i BulletinPro-${{ env.BUILD_VERSION }}-Linux.deb
+            sudo apt-get install -f
+            
+            # Sinon avec tar.gz:
+            tar -xzf BulletinPro-${{ env.BUILD_VERSION }}-Linux.tar.gz
+            cd bundle
+            ./bulletinpro
             ```
             
-            ### 📝 Notes
-            - Version: ${{ env.BUILD_VERSION }}
-            - Les builds Flet offrent une meilleure performance et interface native
-            - Les builds PyInstaller sont plus simples mais plus volumineux
+            **🍎 macOS:**
+            ```bash
+            # Extraire le zip
+            unzip BulletinPro-${{ env.BUILD_VERSION }}-macOS.zip
+            
+            # Ouvrir l'application
+            open BulletinPro.app
+            ```
+            
+            **🪟 Windows:**
+            1. Téléchargez `BulletinPro-${{ env.BUILD_VERSION }}-Windows.zip`
+            2. Extrayez le contenu
+            3. Naviguez vers le dossier `runner/Release` ou `x64/runner/Release`
+            4. Lancez `bulletinpro.exe`
+            
+            ### 📝 Informations
+            - **Version:** ${{ env.BUILD_VERSION }}
+            - **Build:** ${{ env.BUILD_NUMBER }}
+            - **Python:** ${{ env.PYTHON_VERSION }}
+            - **Flutter:** ${{ env.FLUTTER_VERSION }}
+            - **Flet:** ${{ env.FLET_CLI_VERSION }}
+            
+            ### ⚠️ Notes importantes
+            - **Windows:** L'antivirus peut bloquer l'application au premier lancement (faux positif)
+            - **macOS:** Vous devrez peut-être autoriser l'app dans Préférences Système > Sécurité
+            - **Linux:** Assurez-vous d'avoir GTK3 installé (`sudo apt install libgtk-3-0`)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-summary:
     name: 📊 Build Summary
-    needs: [build-flet, build-pyinstaller, create-deb]
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     if: always()
     
@@ -269,17 +299,43 @@ jobs:
         run: |
           echo "## 🎉 BulletinPro Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ env.BUILD_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | $BUILD_VERSION |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Number | $BUILD_NUMBER |" >> $GITHUB_STEP_SUMMARY
+          echo "| Python | $PYTHON_VERSION |" >> $GITHUB_STEP_SUMMARY
+          echo "| Flutter | $FLUTTER_VERSION |" >> $GITHUB_STEP_SUMMARY
+          echo "| Flet CLI | $FLET_CLI_VERSION |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🦋 Flet Builds (Native)" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows | ${{ needs.build-flet.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux | ${{ needs.build-flet.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status | Icon |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐧 Linux | ${{ needs.build-linux.result }} | ${{ needs.build-linux.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🍎 macOS | ${{ needs.build-macos.result }} | ${{ needs.build-macos.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🪟 Windows | ${{ needs.build-windows.result }} | ${{ needs.build-windows.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🐍 PyInstaller Builds (Fallback)" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows | ${{ needs.build-pyinstaller.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux | ${{ needs.build-pyinstaller.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| DEB Package | ${{ needs.create-deb.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          # Message de conclusion
+          if [ "${{ needs.build-linux.result }}" = "success" ] && \
+             [ "${{ needs.build-macos.result }}" = "success" ] && \
+             [ "${{ needs.build-windows.result }}" = "success" ]; then
+            echo "### 🎊 Tous les builds ont réussi !" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Les artifacts sont disponibles ci-dessous." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
+              echo "🚀 **Une release GitHub sera créée automatiquement.**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "💡 Pour créer une release, créez un tag: \`git tag v$BUILD_VERSION && git push --tags\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ⚠️ Certains builds ont échoué" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Consultez les logs des jobs en erreur pour diagnostiquer le problème." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### 🔧 Problèmes courants :" >> $GITHUB_STEP_SUMMARY
+            echo "- Vérifiez que \`requirements.txt\` est présent" >> $GITHUB_STEP_SUMMARY
+            echo "- Assurez-vous que le fichier \`main.py\` existe" >> $GITHUB_STEP_SUMMARY
+            echo "- Vérifiez les dépendances Flutter (webview_flutter, etc.)" >> $GITHUB_STEP_SUMMARY
+          fi

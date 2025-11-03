@@ -53,6 +53,17 @@ jobs:
             pip install -r requirements.txt
           fi
       
+      - name: 🔧 Fix webview_flutter compatibility (Dart 3.6)
+        run: |
+          cat > pubspec_overrides.yaml << 'EOF'
+          dependency_overrides:
+            webview_flutter_android: 3.10.5
+            webview_flutter: 4.4.4
+            webview_flutter_platform_interface: 2.10.0
+          EOF
+          echo "✅ Created pubspec_overrides.yaml"
+          cat pubspec_overrides.yaml
+      
       - name: 🔨 Flet Build Linux
         run: |
           flet build linux --verbose --build-number=$BUILD_NUMBER --build-version=$BUILD_VERSION
@@ -97,6 +108,17 @@ jobs:
           if (Test-Path requirements.txt) {
             pip install -r requirements.txt
           }
+      
+      - name: 🔧 Fix webview_flutter compatibility (Dart 3.6)
+        run: |
+          @"
+          dependency_overrides:
+            webview_flutter_android: 3.10.5
+            webview_flutter: 4.4.4
+            webview_flutter_platform_interface: 2.10.0
+          "@ | Out-File -FilePath pubspec_overrides.yaml -Encoding UTF8
+          Write-Host "✅ Created pubspec_overrides.yaml"
+          Get-Content pubspec_overrides.yaml
       
       - name: 🔨 Flet Build Windows
         run: |

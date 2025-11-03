@@ -1,4 +1,4 @@
-name: Build BulletinPro
+name: Build BulletinPro - Linux & Windows
 
 on:
   push:
@@ -9,6 +9,20 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+env:
+  # Versioning
+  BUILD_NUMBER: 1
+  BUILD_VERSION: 1.0.0
+  
+  # Python et Flet versions
+  PYTHON_VERSION: 3.12.8
+  FLET_CLI_VERSION: 0.27.5
+  
+  # Fix encodage et affichage
+  PYTHONUTF8: 1
+  FLET_CLI_NO_RICH_OUTPUT: 1
+  UV_NO_PROGRESS: 1
+
 jobs:
   build-linux:
     name: 🐧 Build Linux (.deb)
@@ -18,109 +32,47 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
       
-      - name: 🐍 Setup Python
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: 📦 Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang \
-            cmake \
-            ninja-build \
-            pkg-config \
-            libgtk-3-dev \
-            liblzma-dev \
-            libglib2.0-dev \
-            libcairo2-dev \
-            libpango1.0-dev \
-            libgdk-pixbuf2.0-dev \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
-      
-      - name: 🎯 Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.2'
-          channel: 'stable'
-          cache: true
-      
-      - name: 🔍 Flutter doctor
-        run: flutter doctor -v
-      
-      - name: 📚 Install Python dependencies
+      - name: 📦 Install flet-cli ${{ env.FLET_CLI_VERSION }}
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install flet-cli==$FLET_CLI_VERSION
       
-      - name: 🧹 Clean previous builds
+      - name: 🔧 Install Linux dependencies
         run: |
-          rm -rf build/
-          rm -rf dist/
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev
       
-      - name: 🔨 Build Linux with Flet
+      - name: 📚 Install Python project dependencies
         run: |
-          echo "🚀 Starting Flet build..."
-          flet build linux --verbose
-        continue-on-error: false
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
       
-      - name: 🔍 Debug - List all files in build
-        if: always()
+      - name: 🔨 Flet Build Linux
         run: |
-          echo "=== Contents of build directory ==="
-          ls -lhR build/ || echo "Build directory doesn't exist"
+          flet build linux --verbose --build-number=$BUILD_NUMBER --build-version=$BUILD_VERSION
+      
+      - name: 🔍 Verify build output
+        run: |
+          echo "=== Contents of build/linux ==="
+          ls -lhR build/linux || echo "build/linux not found"
           
           echo ""
-          echo "=== Searching for all package files ==="
-          find build -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) || echo "No package files found"
-          
-          echo ""
-          echo "=== All files in build ==="
-          find build -type f || echo "No files in build"
+          echo "=== Searching for .deb files ==="
+          find build -name "*.deb" -type f || echo "No .deb files found"
       
-      - name: 📦 Find .deb package
-        id: find_package
-        run: |
-          # Chercher dans plusieurs emplacements possibles
-          DEB_FILE=""
-          
-          # Option 1: build/linux
-          if [ -z "$DEB_FILE" ]; then
-            DEB_FILE=$(find build/linux -name "*.deb" -type f 2>/dev/null | head -n 1)
-          fi
-          
-          # Option 2: Anywhere in build
-          if [ -z "$DEB_FILE" ]; then
-            DEB_FILE=$(find build -name "*.deb" -type f 2>/dev/null | head -n 1)
-          fi
-          
-          # Option 3: Chercher dans dist
-          if [ -z "$DEB_FILE" ]; then
-            DEB_FILE=$(find dist -name "*.deb" -type f 2>/dev/null | head -n 1)
-          fi
-          
-          if [ -z "$DEB_FILE" ]; then
-            echo "❌ ERROR: No .deb file found!"
-            echo "Build may have failed. Check previous steps."
-            exit 1
-          fi
-          
-          echo "deb_file=$DEB_FILE" >> $GITHUB_OUTPUT
-          echo "deb_name=$(basename $DEB_FILE)" >> $GITHUB_OUTPUT
-          
-          echo "✅ Found .deb package:"
-          ls -lh "$DEB_FILE"
-      
-      - name: 📤 Upload Linux .deb
-        uses: actions/upload-artifact@v4
+      - name: 📤 Upload Linux Artifact
+        uses: actions/upload-artifact@v4.3.4
         with:
-          name: bulletinpro-linux-deb
-          path: ${{ steps.find_package.outputs.deb_file }}
-          retention-days: 30
+          name: bulletinpro-linux-build
+          path: build/linux
           if-no-files-found: error
+          overwrite: false
 
   build-windows:
     name: 🪟 Build Windows (.exe)
@@ -130,101 +82,50 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
       
-      - name: 🐍 Setup Python
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: 🎯 Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.2'
-          channel: 'stable'
-          cache: true
-      
-      - name: 🔍 Flutter doctor
-        run: flutter doctor -v
-      
-      - name: 📚 Install Python dependencies
+      - name: 📦 Install flet-cli ${{ env.FLET_CLI_VERSION }}
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install flet-cli==$env:FLET_CLI_VERSION
       
-      - name: 🧹 Clean previous builds
+      - name: 📚 Install Python project dependencies
         run: |
-          if (Test-Path build) { Remove-Item -Recurse -Force build }
-          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+          if (Test-Path requirements.txt) {
+            pip install -r requirements.txt
+          }
       
-      - name: 🔨 Build Windows with Flet
+      - name: 🔨 Flet Build Windows
         run: |
-          Write-Host "🚀 Starting Flet build..."
-          flet build windows --verbose
+          flet build windows --verbose --no-rich-output --build-number=$env:BUILD_NUMBER --build-version=$env:BUILD_VERSION
       
-      - name: 🔍 Debug - List all files in build
-        if: always()
+      - name: 🔍 Verify build output
         run: |
-          Write-Host "=== Contents of build directory ==="
-          if (Test-Path build) {
-            Get-ChildItem -Path build -Recurse | Format-Table -AutoSize
+          Write-Host "=== Contents of build/windows ==="
+          if (Test-Path build/windows) {
+            Get-ChildItem -Path build/windows -Recurse | Format-Table -AutoSize
           } else {
-            Write-Host "Build directory doesn't exist"
+            Write-Host "build/windows not found"
           }
           
           Write-Host ""
           Write-Host "=== Searching for .exe files ==="
           if (Test-Path build) {
-            Get-ChildItem -Path build -Recurse -Filter *.exe | ForEach-Object {
+            Get-ChildItem -Path build -Recurse -Filter *.exe -ErrorAction SilentlyContinue | ForEach-Object {
               Write-Host $_.FullName
             }
           }
       
-      - name: 📦 Find and package Windows exe
-        id: package_exe
-        run: |
-          # Chercher le fichier .exe
-          $exeFiles = Get-ChildItem -Path "build" -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
-          
-          if ($exeFiles.Count -eq 0) {
-            Write-Error "❌ No .exe file found!"
-            exit 1
-          }
-          
-          $exeFile = $exeFiles[0].FullName
-          $exeName = $exeFiles[0].Name
-          
-          Write-Host "✅ Found .exe: $exeFile"
-          
-          # Créer un dossier pour le package
-          $packageDir = "BulletinPro-Windows"
-          New-Item -ItemType Directory -Force -Path $packageDir
-          
-          # Copier l'exe et les dépendances si elles existent
-          Copy-Item $exeFile $packageDir/
-          
-          # Copier les DLLs si elles existent
-          $exeDir = Split-Path $exeFile
-          if (Test-Path "$exeDir/*.dll") {
-            Copy-Item "$exeDir/*.dll" $packageDir/
-          }
-          
-          # Créer le ZIP
-          $zipName = "BulletinPro-Windows.zip"
-          Compress-Archive -Path $packageDir/* -DestinationPath $zipName -Force
-          
-          Write-Host "✅ Package created: $zipName"
-          
-          # Output pour les étapes suivantes
-          echo "zip_file=$zipName" >> $env:GITHUB_OUTPUT
-          echo "exe_name=$exeName" >> $env:GITHUB_OUTPUT
-      
-      - name: 📤 Upload Windows package
-        uses: actions/upload-artifact@v4
+      - name: 📤 Upload Windows Artifact
+        uses: actions/upload-artifact@v4.3.4
         with:
-          name: bulletinpro-windows-exe
-          path: ${{ steps.package_exe.outputs.zip_file }}
-          retention-days: 30
+          name: bulletinpro-windows-build
+          path: build/windows
           if-no-files-found: error
+          overwrite: false
 
   create-release:
     name: 🚀 Create Release
@@ -239,54 +140,70 @@ jobs:
       - name: 📥 Download Linux artifact
         uses: actions/download-artifact@v4
         with:
-          name: bulletinpro-linux-deb
+          name: bulletinpro-linux-build
           path: ./release/linux
       
       - name: 📥 Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: bulletinpro-windows-exe
+          name: bulletinpro-windows-build
           path: ./release/windows
       
       - name: 📋 List downloaded artifacts
         run: |
-          echo "=== Linux packages ==="
-          ls -lh ./release/linux/
+          echo "=== Linux build ==="
+          ls -lhR ./release/linux/
           
           echo ""
-          echo "=== Windows packages ==="
-          ls -lh ./release/windows/
+          echo "=== Windows build ==="
+          ls -lhR ./release/windows/
+      
+      - name: 📦 Create distribution packages
+        run: |
+          # Créer des archives pour faciliter le téléchargement
+          cd release/linux
+          if [ -f *.deb ]; then
+            cp *.deb ../../BulletinPro-Linux.deb
+          fi
+          cd ../..
+          
+          cd release/windows
+          if [ -d * ]; then
+            zip -r ../../BulletinPro-Windows.zip ./*
+          fi
+          cd ../..
       
       - name: 🚀 Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./release/linux/*
-            ./release/windows/*
+            BulletinPro-Linux.deb
+            BulletinPro-Windows.zip
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
-            ## 📦 BulletinPro - Version ${{ github.ref_name }}
+            ## 📦 BulletinPro ${{ github.ref_name }}
             
-            ### Installation
+            ### 📥 Installation
             
             **Linux (Ubuntu/Debian):**
             ```bash
-            sudo dpkg -i bulletinpro*.deb
+            sudo dpkg -i BulletinPro-Linux.deb
             ```
             
             **Windows:**
-            1. Téléchargez le fichier ZIP
-            2. Extrayez-le
-            3. Lancez BulletinPro.exe
+            1. Téléchargez `BulletinPro-Windows.zip`
+            2. Extrayez le contenu
+            3. Lancez l'exécutable
             
-            ### Nouveautés
-            Consultez les notes de version ci-dessous.
+            ### 📝 Notes
+            - Build version: ${{ env.BUILD_VERSION }}
+            - Build number: ${{ env.BUILD_NUMBER }}
+            
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  
-  # Job de summary
+
   build-summary:
     name: 📊 Build Summary
     needs: [build-linux, build-windows]
@@ -294,14 +211,28 @@ jobs:
     if: always()
     
     steps:
-      - name: 📊 Display summary
+      - name: 📊 Generate Summary
         run: |
-          echo "## 🎉 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 BulletinPro Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: $BUILD_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- Build Number: $BUILD_NUMBER" >> $GITHUB_STEP_SUMMARY
+          echo "- Python: $PYTHON_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- Flet CLI: $FLET_CLI_VERSION" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| 🐧 Linux | ${{ needs.build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 🪟 Windows | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "Les fichiers compilés sont disponibles dans la section **Artifacts** ci-dessous." >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.build-linux.result }}" = "success" ] && [ "${{ needs.build-windows.result }}" = "success" ]; then
+            echo "### ✅ Tous les builds ont réussi!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📦 **Téléchargez les artifacts** dans la section ci-dessous." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Certains builds ont échoué" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Consultez les logs des jobs en erreur pour plus de détails." >> $GITHUB_STEP_SUMMARY
+          fi

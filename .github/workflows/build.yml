@@ -53,20 +53,47 @@ jobs:
             pip install -r requirements.txt
           fi
       
-      - name: 🔧 Fix webview_flutter compatibility (Dart 3.6)
+      - name: 🔨 Flet Build Linux (with manual webview fix)
         run: |
-          cat > pubspec_overrides.yaml << 'EOF'
+          # Étape 1: Laisser Flet initialiser le projet Flutter
+          echo "🚀 Starting Flet build (will fail, but creates Flutter project)..."
+          flet build linux --verbose --build-number=$BUILD_NUMBER --build-version=$BUILD_VERSION 2>&1 | tee build_log.txt || true
+          
+          # Étape 2: Vérifier si le projet Flutter a été créé
+          if [ -d "build/flutter" ]; then
+            echo ""
+            echo "✅ Flutter project created at build/flutter"
+            echo "🔧 Applying webview_flutter_android 3.10.5 fix..."
+            
+            # Créer pubspec_overrides.yaml dans le projet Flutter
+            cat > build/flutter/pubspec_overrides.yaml << 'EOF'
           dependency_overrides:
             webview_flutter_android: 3.10.5
             webview_flutter: 4.4.4
             webview_flutter_platform_interface: 2.10.0
           EOF
-          echo "✅ Created pubspec_overrides.yaml"
-          cat pubspec_overrides.yaml
-      
-      - name: 🔨 Flet Build Linux
-        run: |
-          flet build linux --verbose --build-number=$BUILD_NUMBER --build-version=$BUILD_VERSION
+            
+            echo "📄 Created build/flutter/pubspec_overrides.yaml:"
+            cat build/flutter/pubspec_overrides.yaml
+            
+            # Récupérer les dépendances avec les overrides
+            echo ""
+            echo "📦 Running flutter pub get with overrides..."
+            cd build/flutter
+            /home/runner/flutter/3.27.4/bin/flutter pub get
+            
+            # Construire l'application
+            echo ""
+            echo "🔨 Building Linux application..."
+            /home/runner/flutter/3.27.4/bin/flutter build linux --build-number=$BUILD_NUMBER --build-name=$BUILD_VERSION
+            
+            echo ""
+            echo "✅ Build completed successfully!"
+          else
+            echo "❌ Flutter project not found. Check build_log.txt for errors."
+            cat build_log.txt
+            exit 1
+          fi
       
       - name: 🔍 Verify build output
         run: |
@@ -109,20 +136,47 @@ jobs:
             pip install -r requirements.txt
           }
       
-      - name: 🔧 Fix webview_flutter compatibility (Dart 3.6)
+      - name: 🔨 Flet Build Windows (with manual webview fix)
         run: |
-          @"
+          # Étape 1: Laisser Flet initialiser le projet Flutter
+          Write-Host "🚀 Starting Flet build (will fail, but creates Flutter project)..."
+          flet build windows --verbose --no-rich-output --build-number=$env:BUILD_NUMBER --build-version=$env:BUILD_VERSION 2>&1 | Tee-Object -FilePath build_log.txt
+          
+          # Étape 2: Vérifier si le projet Flutter a été créé
+          if (Test-Path "build/flutter") {
+            Write-Host ""
+            Write-Host "✅ Flutter project created at build/flutter"
+            Write-Host "🔧 Applying webview_flutter_android 3.10.5 fix..."
+            
+            # Créer pubspec_overrides.yaml dans le projet Flutter
+            @"
           dependency_overrides:
             webview_flutter_android: 3.10.5
             webview_flutter: 4.4.4
             webview_flutter_platform_interface: 2.10.0
-          "@ | Out-File -FilePath pubspec_overrides.yaml -Encoding UTF8
-          Write-Host "✅ Created pubspec_overrides.yaml"
-          Get-Content pubspec_overrides.yaml
-      
-      - name: 🔨 Flet Build Windows
-        run: |
-          flet build windows --verbose --no-rich-output --build-number=$env:BUILD_NUMBER --build-version=$env:BUILD_VERSION
+          "@ | Out-File -FilePath build/flutter/pubspec_overrides.yaml -Encoding UTF8
+            
+            Write-Host "📄 Created build/flutter/pubspec_overrides.yaml:"
+            Get-Content build/flutter/pubspec_overrides.yaml
+            
+            # Récupérer les dépendances avec les overrides
+            Write-Host ""
+            Write-Host "📦 Running flutter pub get with overrides..."
+            Set-Location build/flutter
+            & C:\Users\runneradmin\flutter\3.27.4\bin\flutter.bat pub get
+            
+            # Construire l'application
+            Write-Host ""
+            Write-Host "🔨 Building Windows application..."
+            & C:\Users\runneradmin\flutter\3.27.4\bin\flutter.bat build windows --build-number=$env:BUILD_NUMBER --build-name=$env:BUILD_VERSION
+            
+            Write-Host ""
+            Write-Host "✅ Build completed successfully!"
+          } else {
+            Write-Host "❌ Flutter project not found. Check build_log.txt for errors."
+            Get-Content build_log.txt
+            exit 1
+          }
       
       - name: 🔍 Verify build output
         run: |

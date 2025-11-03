@@ -1,0 +1,159 @@
+name: Build BulletinPro
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Permet de lancer manuellement
+
+jobs:
+  build-linux:
+    name: Build Linux (.deb)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: 📦 Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev \
+            libglib2.0-dev \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf2.0-dev
+      
+      - name: 🎯 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.2'
+          channel: 'stable'
+      
+      - name: 🔍 Flutter doctor
+        run: flutter doctor -v
+      
+      - name: 📚 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 🔨 Build Linux
+        run: |
+          flet build linux --verbose
+      
+      - name: 📦 Find .deb file
+        id: find_deb
+        run: |
+          DEB_FILE=$(find build/linux -name "*.deb" | head -n 1)
+          echo "deb_file=$DEB_FILE" >> $GITHUB_OUTPUT
+          echo "Found .deb: $DEB_FILE"
+      
+      - name: 📤 Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bulletinpro-linux
+          path: ${{ steps.find_deb.outputs.deb_file }}
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows (.exe)
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: 🎯 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.2'
+          channel: 'stable'
+      
+      - name: 🔍 Flutter doctor
+        run: flutter doctor -v
+      
+      - name: 📚 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 🔨 Build Windows
+        run: |
+          flet build windows --verbose
+      
+      - name: 📦 Archive Windows build
+        run: |
+          $exeFiles = Get-ChildItem -Path "build\windows\*" -Include *.exe -Recurse
+          if ($exeFiles.Count -eq 0) {
+            Write-Error "No .exe file found!"
+            exit 1
+          }
+          $exeFile = $exeFiles[0].FullName
+          Write-Host "Found .exe: $exeFile"
+          Compress-Archive -Path $exeFile -DestinationPath bulletinpro-windows.zip
+      
+      - name: 📤 Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bulletinpro-windows
+          path: bulletinpro-windows.zip
+          if-no-files-found: error
+
+  create-release:
+    name: Create Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: 📥 Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bulletinpro-linux
+          path: ./artifacts/linux
+      
+      - name: 📥 Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bulletinpro-windows
+          path: ./artifacts/windows
+      
+      - name: 📋 List artifacts
+        run: |
+          echo "=== Linux artifacts ==="
+          ls -lh ./artifacts/linux/
+          echo ""
+          echo "=== Windows artifacts ==="
+          ls -lh ./artifacts/windows/
+      
+      - name: 🚀 Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/linux/*.deb
+            ./artifacts/windows/*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

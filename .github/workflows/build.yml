@@ -7,11 +7,11 @@ on:
       - 'v*'
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:  # Permet de lancer manuellement
+  workflow_dispatch:
 
 jobs:
   build-linux:
-    name: Build Linux (.deb)
+    name: 🐧 Build Linux (.deb)
     runs-on: ubuntu-latest
     
     steps:
@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: 📦 Install Linux dependencies
         run: |
@@ -36,13 +37,16 @@ jobs:
             libglib2.0-dev \
             libcairo2-dev \
             libpango1.0-dev \
-            libgdk-pixbuf2.0-dev
+            libgdk-pixbuf2.0-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
       
       - name: 🎯 Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.29.2'
           channel: 'stable'
+          cache: true
       
       - name: 🔍 Flutter doctor
         run: flutter doctor -v
@@ -52,26 +56,74 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: 🔨 Build Linux
+      - name: 🧹 Clean previous builds
         run: |
+          rm -rf build/
+          rm -rf dist/
+      
+      - name: 🔨 Build Linux with Flet
+        run: |
+          echo "🚀 Starting Flet build..."
           flet build linux --verbose
+        continue-on-error: false
       
-      - name: 📦 Find .deb file
-        id: find_deb
+      - name: 🔍 Debug - List all files in build
+        if: always()
         run: |
-          DEB_FILE=$(find build/linux -name "*.deb" | head -n 1)
-          echo "deb_file=$DEB_FILE" >> $GITHUB_OUTPUT
-          echo "Found .deb: $DEB_FILE"
+          echo "=== Contents of build directory ==="
+          ls -lhR build/ || echo "Build directory doesn't exist"
+          
+          echo ""
+          echo "=== Searching for all package files ==="
+          find build -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) || echo "No package files found"
+          
+          echo ""
+          echo "=== All files in build ==="
+          find build -type f || echo "No files in build"
       
-      - name: 📤 Upload Linux artifact
+      - name: 📦 Find .deb package
+        id: find_package
+        run: |
+          # Chercher dans plusieurs emplacements possibles
+          DEB_FILE=""
+          
+          # Option 1: build/linux
+          if [ -z "$DEB_FILE" ]; then
+            DEB_FILE=$(find build/linux -name "*.deb" -type f 2>/dev/null | head -n 1)
+          fi
+          
+          # Option 2: Anywhere in build
+          if [ -z "$DEB_FILE" ]; then
+            DEB_FILE=$(find build -name "*.deb" -type f 2>/dev/null | head -n 1)
+          fi
+          
+          # Option 3: Chercher dans dist
+          if [ -z "$DEB_FILE" ]; then
+            DEB_FILE=$(find dist -name "*.deb" -type f 2>/dev/null | head -n 1)
+          fi
+          
+          if [ -z "$DEB_FILE" ]; then
+            echo "❌ ERROR: No .deb file found!"
+            echo "Build may have failed. Check previous steps."
+            exit 1
+          fi
+          
+          echo "deb_file=$DEB_FILE" >> $GITHUB_OUTPUT
+          echo "deb_name=$(basename $DEB_FILE)" >> $GITHUB_OUTPUT
+          
+          echo "✅ Found .deb package:"
+          ls -lh "$DEB_FILE"
+      
+      - name: 📤 Upload Linux .deb
         uses: actions/upload-artifact@v4
         with:
-          name: bulletinpro-linux
-          path: ${{ steps.find_deb.outputs.deb_file }}
+          name: bulletinpro-linux-deb
+          path: ${{ steps.find_package.outputs.deb_file }}
+          retention-days: 30
           if-no-files-found: error
 
   build-windows:
-    name: Build Windows (.exe)
+    name: 🪟 Build Windows (.exe)
     runs-on: windows-latest
     
     steps:
@@ -82,12 +134,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: 🎯 Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.29.2'
           channel: 'stable'
+          cache: true
       
       - name: 🔍 Flutter doctor
         run: flutter doctor -v
@@ -97,63 +151,157 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: 🔨 Build Windows
+      - name: 🧹 Clean previous builds
         run: |
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+      
+      - name: 🔨 Build Windows with Flet
+        run: |
+          Write-Host "🚀 Starting Flet build..."
           flet build windows --verbose
       
-      - name: 📦 Archive Windows build
+      - name: 🔍 Debug - List all files in build
+        if: always()
         run: |
-          $exeFiles = Get-ChildItem -Path "build\windows\*" -Include *.exe -Recurse
+          Write-Host "=== Contents of build directory ==="
+          if (Test-Path build) {
+            Get-ChildItem -Path build -Recurse | Format-Table -AutoSize
+          } else {
+            Write-Host "Build directory doesn't exist"
+          }
+          
+          Write-Host ""
+          Write-Host "=== Searching for .exe files ==="
+          if (Test-Path build) {
+            Get-ChildItem -Path build -Recurse -Filter *.exe | ForEach-Object {
+              Write-Host $_.FullName
+            }
+          }
+      
+      - name: 📦 Find and package Windows exe
+        id: package_exe
+        run: |
+          # Chercher le fichier .exe
+          $exeFiles = Get-ChildItem -Path "build" -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
+          
           if ($exeFiles.Count -eq 0) {
-            Write-Error "No .exe file found!"
+            Write-Error "❌ No .exe file found!"
             exit 1
           }
+          
           $exeFile = $exeFiles[0].FullName
-          Write-Host "Found .exe: $exeFile"
-          Compress-Archive -Path $exeFile -DestinationPath bulletinpro-windows.zip
+          $exeName = $exeFiles[0].Name
+          
+          Write-Host "✅ Found .exe: $exeFile"
+          
+          # Créer un dossier pour le package
+          $packageDir = "BulletinPro-Windows"
+          New-Item -ItemType Directory -Force -Path $packageDir
+          
+          # Copier l'exe et les dépendances si elles existent
+          Copy-Item $exeFile $packageDir/
+          
+          # Copier les DLLs si elles existent
+          $exeDir = Split-Path $exeFile
+          if (Test-Path "$exeDir/*.dll") {
+            Copy-Item "$exeDir/*.dll" $packageDir/
+          }
+          
+          # Créer le ZIP
+          $zipName = "BulletinPro-Windows.zip"
+          Compress-Archive -Path $packageDir/* -DestinationPath $zipName -Force
+          
+          Write-Host "✅ Package created: $zipName"
+          
+          # Output pour les étapes suivantes
+          echo "zip_file=$zipName" >> $env:GITHUB_OUTPUT
+          echo "exe_name=$exeName" >> $env:GITHUB_OUTPUT
       
-      - name: 📤 Upload Windows artifact
+      - name: 📤 Upload Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: bulletinpro-windows
-          path: bulletinpro-windows.zip
+          name: bulletinpro-windows-exe
+          path: ${{ steps.package_exe.outputs.zip_file }}
+          retention-days: 30
           if-no-files-found: error
 
   create-release:
-    name: Create Release
+    name: 🚀 Create Release
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    
+    permissions:
+      contents: write
     
     steps:
       - name: 📥 Download Linux artifact
         uses: actions/download-artifact@v4
         with:
-          name: bulletinpro-linux
-          path: ./artifacts/linux
+          name: bulletinpro-linux-deb
+          path: ./release/linux
       
       - name: 📥 Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: bulletinpro-windows
-          path: ./artifacts/windows
+          name: bulletinpro-windows-exe
+          path: ./release/windows
       
-      - name: 📋 List artifacts
+      - name: 📋 List downloaded artifacts
         run: |
-          echo "=== Linux artifacts ==="
-          ls -lh ./artifacts/linux/
+          echo "=== Linux packages ==="
+          ls -lh ./release/linux/
+          
           echo ""
-          echo "=== Windows artifacts ==="
-          ls -lh ./artifacts/windows/
+          echo "=== Windows packages ==="
+          ls -lh ./release/windows/
       
-      - name: 🚀 Create Release
-        uses: softprops/action-gh-release@v1
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./artifacts/linux/*.deb
-            ./artifacts/windows/*.zip
+            ./release/linux/*
+            ./release/windows/*
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ## 📦 BulletinPro - Version ${{ github.ref_name }}
+            
+            ### Installation
+            
+            **Linux (Ubuntu/Debian):**
+            ```bash
+            sudo dpkg -i bulletinpro*.deb
+            ```
+            
+            **Windows:**
+            1. Téléchargez le fichier ZIP
+            2. Extrayez-le
+            3. Lancez BulletinPro.exe
+            
+            ### Nouveautés
+            Consultez les notes de version ci-dessous.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  
+  # Job de summary
+  build-summary:
+    name: 📊 Build Summary
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: 📊 Display summary
+        run: |
+          echo "## 🎉 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐧 Linux | ${{ needs.build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🪟 Windows | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Les fichiers compilés sont disponibles dans la section **Artifacts** ci-dessous." >> $GITHUB_STEP_SUMMARY
